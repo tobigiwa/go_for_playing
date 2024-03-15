@@ -58,7 +58,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("\n\nwindows that makes up 80%% of the screen are %v\n", res)
+	fmt.Printf("\n\nwindows that makes up 80%% of the screen minus the focus are %v\n", res[1:])
 }
 
 func getVisibleWindow(X *xgb.Conn, X11 *xgbutil.XUtil, activeWindow xproto.Window, otherWindows []xproto.Window) ([]string, error) {
@@ -127,34 +127,59 @@ func getVisibleWindow(X *xgb.Conn, X11 *xgbutil.XUtil, activeWindow xproto.Windo
 		area2 := int(geom2.Width) * int(geom2.Height)
 		// area2 := clipToScreen(trans2, geom2, rootGeom)
 
-		x_overlap := max(0, min(int(geom1.X)+int(geom1.Width), int(geom2.X)+int(geom2.Width))-max(int(geom1.X), int(geom2.X)))
-		y_overlap := max(0, min(int(geom1.Y)+int(geom1.Height), int(geom2.X)+int(geom2.Height))-max(int(geom1.Y), int(geom2.Y)))
-
-		overlapArea := x_overlap * y_overlap
+		overlapArea := calculateOverlap(geom1, geom2)
 
 		overlapRatio := float32(overlapArea) / float32(area2)
 
-		fmt.Println("\n", overlapArea, area2, overlapRatio)
+		fmt.Printf("\noverlapArea:%v, area2:%v, overlapRatio:%v%%\n", overlapArea, area2, overlapRatio*100)
 		switch {
 
 		case overlapRatio >= 0.8:
-			fmt.Printf("window:%v is 80%% covered by focus:%v, actual percentage cover is %v%%\n", NamedWindows[otherWindow], NamedWindows[activeWindow], overlapRatio*100)
+			fmt.Printf("window:%v is 80%% or more covered by focus:%v (therefore discarded), actual percentage cover --> %v%%\n", NamedWindows[otherWindow], NamedWindows[activeWindow], overlapRatio*100)
 			continue
 
 		case overlapRatio <= 0.1:
-			var cover float32
-			fmt.Printf("window:%v apppears to have little or no overlap with the focus,actual overlapRatio is %v\n", NamedWindows[otherWindow], overlapRatio)
-			coverage += area2 - overlapArea
+			fmt.Printf("window:%v apppears to have little or no overlap with the focus,actual overlapRatio is %v%%\n", NamedWindows[otherWindow], overlapRatio)
 
-			if cover = float32(coverage) / float32(rootArea); cover >= 0.80 {
-				visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
-				fmt.Printf("window:%v with focus COVERS more than 80%% of the scree\n", NamedWindows[otherWindow])
-				return visibleWindows, nil
+			var (
+				cover      float32
+				wasCovered bool = false
+			)
+
+			for x := i + 1; x <= len(otherWindows)-1; x++ {
+				fmt.Printf("--- windows that went through inner loop %v ---\n", NamedWindows[otherWindows[x]])
+				before, err := xproto.GetGeometry(X, xproto.Drawable(otherWindows[x])).Reply()
+				if err != nil {
+					return nil, err
+				}
+
+				overlapArea2 := calculateOverlap(before, geom2)
+				if float32(overlapArea2)/float32(area2) >= 0.7 {
+					fmt.Printf("+++ window:%v is too covered by other window:%v +++\n", otherWindow, NamedWindows[otherWindows[x]])
+					wasCovered = true
+					break
+
+				}
+
+				continue
 			}
 
-			visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
-			fmt.Printf("window:%v DOES NOT COVER 80%% of the screen with focus, cover was %v%% \n", NamedWindows[otherWindow], cover*100)
-			continue
+			if !wasCovered {
+				coverage += area2 - overlapArea
+
+				if cover = float32(coverage) / float32(rootArea); cover >= 0.80 {
+					visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
+					fmt.Printf("window:%v with focus COVERS more than 80%% of the scree\n", NamedWindows[otherWindow])
+					return visibleWindows, nil
+				}
+
+				visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
+				fmt.Printf("window:%v DOES NOT COVER 80%% of the screen with focus, cover was %v%% \n", NamedWindows[otherWindow], cover*100)
+				continue
+
+			} else {
+				fmt.Printf("window:%v was too covered, therefore discarded\n", NamedWindows[otherWindow])
+			}
 
 		default:
 			fmt.Printf("overlap percentage of window:%v with focus:%v is %v%%\n", NamedWindows[otherWindow], NamedWindows[activeWindow], overlapRatio*100)
@@ -174,6 +199,13 @@ func getVisibleWindow(X *xgb.Conn, X11 *xgbutil.XUtil, activeWindow xproto.Windo
 	}
 
 	return visibleWindows, ErrDoesNotCover
+}
+
+func calculateOverlap(geom1, geom2 *xproto.GetGeometryReply) int {
+	x_overlap := max(0, min(int(geom1.X)+int(geom1.Width), int(geom2.X)+int(geom2.Width))-max(int(geom1.X), int(geom2.X)))
+	y_overlap := max(0, min(int(geom1.Y)+int(geom1.Height), int(geom2.X)+int(geom2.Height))-max(int(geom1.Y), int(geom2.Y)))
+
+	return x_overlap * y_overlap
 }
 
 var (
