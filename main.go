@@ -142,11 +142,11 @@ func getVisibleWindow(X *xgb.Conn, X11 *xgbutil.XUtil, activeWindow xproto.Windo
 			continue
 
 		case overlapRatio <= 0.1:
-			fmt.Printf("window:%v apppears to have little or no overlap with the focus,actual overlapRatio is %v\n", NamedWindows[otherWindow], overlapRatio)
-			combinedArea := activeArea + area2
-			
 			var cover float32
-			if cover = float32(combinedArea) / float32(rootArea); cover >= 0.80 {
+			fmt.Printf("window:%v apppears to have little or no overlap with the focus,actual overlapRatio is %v\n", NamedWindows[otherWindow], overlapRatio)
+			coverage += area2 - overlapArea
+
+			if cover = float32(coverage) / float32(rootArea); cover >= 0.80 {
 				visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
 				fmt.Printf("window:%v with focus COVERS more than 80%% of the scree\n", NamedWindows[otherWindow])
 				return visibleWindows, nil
@@ -167,7 +167,7 @@ func getVisibleWindow(X *xgb.Conn, X11 *xgbutil.XUtil, activeWindow xproto.Windo
 			}
 
 			visibleWindows = append(visibleWindows, NamedWindows[otherWindow])
-			fmt.Printf("window:%v was added to visible because it overlap is more than 10%% and less than 80%% but does not make 80%% coverage with full screen, visible windows are %v --->", NamedWindows[otherWindow], visibleWindows)
+			fmt.Printf("window:%v was added to visible because it overlap is more than 10%% and less than 80%% but does not make 80%% coverage with full screen, visible windows are ---> %v\n\n", NamedWindows[otherWindow], visibleWindows)
 			continue
 		}
 
